@@ -29,25 +29,25 @@ def a_to_C_T(a):
 	return C_T
 
 
-def pitt_peters(C_t, u_rotor, U_inf, R, dt):
+def pitt_peters(C_t, u_rotor, u_inf, R, dt):
 	"""
 	Applies the Pitt-Peters model.
 	:param C_t: Thrust coefficient on the actuator, vind is the induced velocity,
 	:param u_rotor: current velocity at the annulus
-	:param U_inf: unperturbed velocity
+	:param u_inf: unperturbed velocity
 	:param R: radius of the annulus
 	:param dt: time step duration
 	:return:
 	"""
-	a = -u_rotor/U_inf  # determine the induction coefficient for the time step {i-1}
+	a = -u_rotor/u_inf  # determine the induction coefficient for the time step {i-1}
 	C_T_old = -a_to_C_T(a)  # calculate the thrust coefficient from the induction for the time step {i-1}
 	
-	dvind_dt = (C_t-C_T_old)/(16/(3*np.pi))*(U_inf ** 2/R)  # calculate the time derivative of the induction velocity
+	dvind_dt = (C_t-C_T_old)/(16/(3*np.pi))*(u_inf ** 2/R)  # calculate the time derivative of the induction velocity
 	vind_new = u_rotor+dvind_dt*dt  # calculate the induction at time {i} by time integration
 	return vind_new, dvind_dt
 
 
-def oye_dynamic_inflow(u_rotor, C_T_now, C_T_qs, vint, Uinf, R, r, dt,):
+def oye_dynamic_inflow(u_rotor, C_T_now, C_T_qs, vint, u_inf, R, r, dt,):
 	# this function determines the time derivative of the induction at the annulli
 	# using the Øye dynamic inflow model
 	# Ct is the thrust coefficient on the actuator, vind is the induced velocity,
@@ -55,18 +55,18 @@ def oye_dynamic_inflow(u_rotor, C_T_now, C_T_qs, vint, Uinf, R, r, dt,):
 	# r is the radial position of the annulus. vqs is the quasi-steady value from BEM,
 	# vint is an intermediate value and vz is the induced velocity
 	
-	# calculate  quasi-steady induction velocity
-	vqst1 = -C_T_to_a(-C_T_now)*Uinf
+	# calculate quasi-steady induction velocity
+	vqst1 = -C_T_to_a(-C_T_now)*u_inf
 	
 	# calculate current induction factor
-	a = -vz/Uinf
+	a = -u_rotor/u_inf
 	
 	# calculate time scales of the model
-	t1 = 1.1/(1-1.3*a)*R/Uinf
+	t1 = 1.1/(1-1.3*a)*R/u_inf
 	t2 = (0.39-0.26*(r/R) ** 2)*t1
 	
 	# calculate next-time-step quasi-steady induction velocity
-	vqst2 = -ainduction(-Ct2)*Uinf
+	vqst2 = -C_T_to_a(-C_T_qs)*u_inf
 	
 	# calculate time derivative of intermediate velocity
 	dvint_dt = (vqst1+(vqst2-vqst1)/dt*0.6*t1-vint)/t1
@@ -75,8 +75,8 @@ def oye_dynamic_inflow(u_rotor, C_T_now, C_T_qs, vint, Uinf, R, r, dt,):
 	vint2 = vint+dvint_dt*dt
 	
 	# calculate time derivaive of the induced velocity
-	dvz_dt = ((vint+vint2)/2-vz)/t2
+	dvz_dt = ((vint+vint2)/2-u_rotor)/t2
 	
 	# calculate new induced velocity
-	vz2 = vz+dvz_dt*dt
+	vz2 = u_rotor+dvz_dt*dt
 	return vz2, vint2

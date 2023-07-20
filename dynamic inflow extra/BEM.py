@@ -4,6 +4,7 @@ from math import pi, acos, exp, atan, cos, sin
 import pandas as pd
 import matplotlib.pyplot as plt
 
+
 def function_BEM(ROTOR, AIRFOIL, FLOW, SIMULATION):
     # Pre-allocate variables
     a_new = np.full(len(ROTOR['r']), 0.3)
