@@ -3,7 +3,8 @@ from scipy.interpolate import interp1d
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy import interpolate
-from data_handler import Rotor
+from data_handler import Rotor, Flow, Simulation, Results
+
 
 def CTfunction(a, glauert = False):
     """
@@ -186,11 +187,11 @@ def function_BEM(ROTOR, AIRFOIL, FLOW, SIMULATION, RESULTS):
             else:
                 raise NotImplemented(f"Unsteady model {SIMULATION['model']} not implemented.")
         
-        exp = np.exp(-ROTOR['B']/2 * ((1-ROTOR['mu'])/ROTOR['mu']) * np.sqrt(1+FLOW['lambda']**2 *
+        exp = np.exp(-ROTOR['B']/2 * ((1-ROTOR['mu'])/ROTOR['mu']) * np.sqrt(1+FLOW['tsr']**2 *
                                                                              ROTOR['mu']**2/(1-a_n)**2))
         f_tip = 2/np.pi * np.arccos(exp)
         #Root correction
-        exp = np.exp(-ROTOR['B']/2 * ((ROTOR['mu']-ROTOR['mu'][0])/ROTOR['mu']) * np.sqrt(1+FLOW['lambda']**2 *
+        exp = np.exp(-ROTOR['B']/2 * ((ROTOR['mu']-ROTOR['mu'][0])/ROTOR['mu']) * np.sqrt(1+FLOW['tsr']**2 *
                                                                                           ROTOR['mu']**2/(1-a_n)**2))
         f_root = 2/np.pi * np.arccos(exp)
         #Combined correction
@@ -198,7 +199,7 @@ def function_BEM(ROTOR, AIRFOIL, FLOW, SIMULATION, RESULTS):
         f[f < 0.1] = 0.1
         a_n = a_n/f
         a_n[a_n > 0.95] = 0.95
-        ap_n = ct*ROTOR['B']/(2*FLOW['rho']*2*np.pi*ROTOR['mu']*ROTOR['r']*FLOW['V0']**2*(1-a_n)*FLOW['lambda'] *
+        ap_n = ct*ROTOR['B']/(2*FLOW['rho']*2*np.pi*ROTOR['mu']*ROTOR['r']*FLOW['V0']**2*(1-a_n)*FLOW['tsr'] *
                               ROTOR['mu']*f)
         
         a_new = 0.2*a_n+0.8*a_old
@@ -218,39 +219,16 @@ def function_BEM(ROTOR, AIRFOIL, FLOW, SIMULATION, RESULTS):
     return P, T, CP, CT, a_new, ap_new, f, Ct, v_int
 
 
-ROTOR = Rotor()  # change rotor parameters here
-
-# Flow
-FLOW = {}
-FLOW['V0'] = 10                                 # Inflow velocity [m/s]
-FLOW['rho'] = 1.225                             # Air density [kg/m2]
-FLOW['lambda'] = 10
-FLOW['omega'] = FLOW['lambda']*FLOW['V0']/ROTOR['R']  # Rotational speed [rad/s]
-
-# Airfoil  
-AIRFOIL = {}
-AIRFOIL['DU 95-W-180'] = pd.read_excel('DU95W180.xlsx',skiprows=3) # Blade Airfoils [-] # Root airfoil: alpha, Cl, Cd, Cm
-
-# Simulation options  
-SIMULATION = {}
-SIMULATION['error'] = 0.001                      # Convergence criteria BEM
-SIMULATION['dt'] = 0.1                  # Time step [s]
-SIMULATION['time'] = np.arange(0, 30, SIMULATION['dt']) # Time series [s]
-SIMULATION['current_index'] = 0
-SIMULATION['model'] = 'Steady'
-# SIMULATION['taustar_nw'] = 0.5                  # Constants for dynamic inflow model
-# SIMULATION['taustar_fw'] = 2                    # Constants for dynamic inflow model
-
-RESULTS = {}
-RESULTS['P'] = np.zeros(len(SIMULATION['time']))
-RESULTS['T'] = np.zeros(len(SIMULATION['time']))
-RESULTS['CP'] = np.zeros(len(SIMULATION['time']))
-RESULTS['CT'] = np.zeros(len(SIMULATION['time']))
-RESULTS['a'] = np.zeros([len(SIMULATION['time']), len(ROTOR['r'])])
-RESULTS['ap'] = np.zeros([len(SIMULATION['time']), len(ROTOR['r'])])
-RESULTS['f'] = np.zeros([len(SIMULATION['time']), len(ROTOR['r'])])
-RESULTS['Ct'] = np.zeros([len(SIMULATION['time']), len(ROTOR['r'])])
-RESULTS['v_int'] = np.zeros([len(SIMULATION['time']), len(ROTOR['r'])])
+# change rotor parameters here
+ROTOR = Rotor()
+# change flow parameters here
+FLOW = Flow(ROTOR)
+# change airfoil here (Root airfoil: alpha, Cl, Cd, Cm)
+AIRFOIL = {'DU 95-W-180': pd.read_excel('DU95W180.xlsx', skiprows=3)}
+# change simulation parameters here
+SIMULATION = Simulation(model="Steady")
+# result container does not need changes in the initialisation
+RESULTS = Results(ROTOR, SIMULATION)
 
 CT0 = 0.3
 CT1 = 0.6
