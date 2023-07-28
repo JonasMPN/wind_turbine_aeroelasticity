@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 import numpy as np
+from copy import copy
 
 
 @dataclass
@@ -15,7 +16,7 @@ class Rotor:
 	deduced parameters:
 		D:  	            # diameter
 		r:	                # radial blade element positions
-		beta:	            # blade twist in radians (through pre-defined function)
+		twist:	            # blade twist in radians (through pre-defined function)
 		chord:	            # chord at blade element positions (through pre-defined function)
 		sigma:	            # rotor solidity at blade element positions
 	"""
@@ -23,21 +24,24 @@ class Rotor:
 	R: float = 50
 	R_root: float = 0.2*50
 	B: int = 3
-	theta_pitch: float = np.deg2rad(-2)
+	pitch: float = np.deg2rad(-2)
 	airfoil: str = "DU 95-W-180"
 	
 	r: np.ndarray = field(init=False)
-	beta: np.ndarray = field(init=False)
+	twist: np.ndarray = field(init=False)
 	chord: np.ndarray = field(init=False)
 	sigma: np.ndarray = field(init=False)
 	
 	def __post_init__(self):
 		self.r = np.linspace(self.R_root, self.R, self.n_r)
 		self.mu = self.r/self.R
-		self.beta = np.deg2rad(self._twist_distribution(self.mu))
+		self.twist = np.deg2rad(self._twist_distribution(self.mu))
 		self.chord = self._chord_distribution(self.mu)
 		self.sigma = self.chord*self.B/(2*np.pi*self.r)
 		
+	def settable(self):
+		return copy([param for param in self.__dict__.keys() if not param.startswith("__") and not callable(param)])
+	
 	def __getitem__(self, item):
 		return self.__dict__[item]
 	
@@ -70,6 +74,9 @@ class Flow:
 	
 	def __post_init__(self):
 		self.omega = self.tsr*self.V0/self.rotor.R
+	
+	def settable(self):
+		return copy([param for param in self.__dict__.keys() if not param.startswith("__") and not callable(param)])
 	
 	def __getitem__(self, item):
 		return self.__dict__[item]
