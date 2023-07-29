@@ -2,8 +2,9 @@ import numpy as np
 from scipy.interpolate import interp1d
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy import interpolate
+from scipy import interpolate, optimize
 from data_handler import Rotor, Flow, Simulation, Results
+from copy import copy
 
 
 def CTfunction(a, glauert = False):
@@ -112,7 +113,7 @@ def oye(a, Ct1, Ct2, vint, V0, R, r,dt,glauert=False):
     return a_new, vint2
 
 
-def BEM(rotor, airfoil, flow, simulation, results):
+def BEM(rotor: Rotor, airfoil: dict, flow: Flow, simulation: Simulation, results: Results):
     # Pre-allocate variables
     a_new = np.full(len(rotor['r']), 0.3)
     ap_new = np.zeros(len(rotor['r']))
@@ -153,34 +154,34 @@ def BEM(rotor, airfoil, flow, simulation, results):
         ct = Cl*np.sin(Phi)-Cd*np.cos(Phi)
 
         # Local thrust and torque coefficient
-        CT = Vrel**2/flow['V0']**2*rotor['sigma']*cn
+        Ct = Vrel**2/flow['V0']**2*rotor['sigma']*cn
         CQ = Vrel**2/flow['V0']**2*rotor['sigma']*ct
         
         if (simulation['current_index'] == 0) or (simulation['model'] == 'Steady'):
-            a_n = ainduction(CT, glauert=True)
+            a_n = ainduction(Ct, glauert=True)
         else:
             if simulation['model'] == 'PP':
                 a_o = results["a"][simulation['current_index']-1]
                 f_o = results["f"][simulation['current_index']-1]
-                a_n = pitt_peters(CT, a_o*f_o, flow['V0'], rotor['r'], simulation['dt'], glauert=True)
+                a_n = pitt_peters(Ct, a_o*f_o, flow['V0'], rotor['r'], simulation['dt'], glauert=True)
             
             elif simulation['model'] == 'LM':
                 a_o = results["a"][simulation['current_index']-1]
                 f_o = results["f"][simulation['current_index']-1]
-                CT_o = results["Ct"][simulation['current_index']-1]
-                a_n = larsen_madsen(CT, a_o*f_o, flow['V0'], rotor['r'], simulation['dt'], glauert=True)
+                Ct_o = results["Ct"][simulation['current_index']-1]
+                a_n = larsen_madsen(Ct, a_o*f_o, flow['V0'], rotor['r'], simulation['dt'], glauert=True)
                 
             elif simulation['model'] == 'OYE':
                 if simulation['current_index'] == 1:
-                    CT_o = results["Ct"][simulation['current_index']-1]
-                    v_int = -ainduction(CT_o, glauert=True)*flow["V0"]
+                    Ct_o = results["Ct"][simulation['current_index']-1]
+                    v_int = -ainduction(Ct_o, glauert=True)*flow["V0"]
                 else:
                     v_int = results["v_int"][simulation['current_index']-1]
-                CT_o = results["Ct"][simulation['current_index']-1]
+                Ct_o = results["Ct"][simulation['current_index']-1]
                 a_o = results["a"][simulation['current_index']-1]
                 f_o = results["f"][simulation['current_index']-1]
                 
-                a_n, v_int = oye(a_o*f_o, CT_o, CT, v_int, flow['V0'], rotor['R'], rotor['r'], simulation['dt'],
+                a_n, v_int = oye(a_o*f_o, Ct_o, Ct, v_int, flow['V0'], rotor['R'], rotor['r'], simulation['dt'],
                                  glauert=True)
             else:
                 raise NotImplemented(f"Unsteady model {simulation['model']} not implemented.")
@@ -214,10 +215,11 @@ def BEM(rotor, airfoil, flow, simulation, results):
     T = rotor['B']*np.trapz(pn, rotor['r'])
     CT = T/(1/2*flow['rho']*flow['V0']**2*np.pi*rotor['R']**2)
     simulation['current_index'] += 1
-    return P, T, CP, CT, a_new, ap_new, f, v_int
+    return {"P": P, "T": T, "CP": CP, "CT": CT, "a": a_new, "ap": ap_new, "f": f, "Ct": Ct, "v_int": v_int,
+            "alpha": Alfa, "phi": Phi}
 
 
-def steady_reference(rotor, airfoil, flow, simulation, change: tuple):
+def steady_reference(rotor, airfoil, flow, simulation, change: tuple[str, list or np.ndarray]):
     if len(change) != 2:
         raise ValueError(f"'steady_reference' must receive a tuple 'change' with two entries; first the name of the "
                          f"parameter that is to be changed and second the values thereof.")
@@ -240,15 +242,127 @@ def steady_reference(rotor, airfoil, flow, simulation, change: tuple):
             rotor[param] = value
         elif setting_for == "flow":
             flow[param] = value
-        P, T, CP, CT, a_new, ap_new, f, v_int = BEM(rotor, airfoil, flow, simulation, None)
-        CT_array[i] = CT
-        CP_array[i] = CP
+        result = BEM(rotor, airfoil, flow, simulation, None)
+        CT_array[i] = result["CT"]
+        CP_array[i] = result["CP"]
     return {param: values, "CT": CT_array, "CP": CP_array}
 
 
-def solve_condition(rotor: Rotor, flow: Flow, airfoil: str, simulation: Simulation, results: Results,
-                    steady_CT: np.ndarray=None, u_inf: np.ndarray=None):
-    pass
+def get_steady_reference(rotor: Rotor, flow: Flow, airfoil: dict, simulation: Simulation,
+                         change_param: str, change_type: str, change_values: tuple, min_root_error: float=1e-4):
+    """
+    Calculates certain steady values to match the wanted 'change_param' to achieve the 'change_values'.
+    
+    :param rotor:
+    :param flow:
+    :param airfoil:
+    :param simulation:
+    :param change_param: The parameter that has a predefined change. Implemented are "CT_steady" and "U_inf"
+    :param change_type: The way the parameter changes. Implemented are "step" and "sine"
+    :param change_values: Has a different format dependent on "change_type":
+        - "change_type" == "step": (value_pre_step, value_after_step). The step will be at half the time given by
+        'simulation'
+        - "change_type" == "sine": (mean, amplitude, frequency).
+    :return: Changes dependent on "change_param":
+        - "CT_steady": returns list of needed pitch angles (rad)
+        - "U_inf": returns list of needed tip speed ratios
+    """
+    implemented_change_param = ["CT_steady", "U_inf"]
+    implemented_change_type = ["step", "sine"]
+    time = simulation["time"]
+    if change_param == "CT_steady":
+        #  pitches the blades to the right angle to yield the wanted steady CT
+        CT = {"wanted": None}
+        
+        def residual(pitch: float):
+            tmp_result = steady_reference(rotor, airfoil, flow, simulation, change=("pitch", [pitch]))
+            return tmp_result["CT"][0]-CT["wanted"]
+        
+        if change_type == "step":
+            wanted_values = change_values
+        elif change_type == "sine":
+            mean, amplitude, freq = change_values
+            wanted_values = mean+(amplitude*np.sin(2*np.pi*freq*time))
+        else:
+            raise NotImplemented(f"Calculation for 'change_type'=={change_type} not implemented. Implemented are "
+                             f"{implemented_change_type}.")
+        
+        steady_results = np.zeros(len(wanted_values))  # the pitch
+        for i, wanted_value in enumerate(wanted_values):
+            CT["wanted"] = wanted_value
+            steady_results[i] = optimize.newton(residual, steady_results[i-1], tol=min_root_error)
+            
+    elif change_param == "U_inf":
+        #  changes the TSR to keep the rotational speed the same
+        if change_type == "step":
+            wanted_values = change_values
+        elif change_type == "sine":
+            mean, amplitude, freq = change_values
+            wanted_values = mean+(amplitude*np.sin(2*np.pi*freq*time))
+        else:
+            raise NotImplemented(f"Calculation for 'change_type'=={change_type} not implemented. Implemented are "
+                             f"{implemented_change_type}.")
+        steady_results = flow["omega"]*flow["rotor"]["R"]/np.asarray(wanted_values)  # the TSR
+    else:
+        raise NotImplemented(f"Calculation for 'change_param'=={change_param} not implemented. Implemented are "
+                             f"{implemented_change_param}.")
+    return steady_results
 
+
+def calculate_case(rotor: Rotor, flow: Flow, airfoil: dict, simulation: Simulation, change_param: str,
+                   change_type: str, change_values: tuple, models: tuple = ("OYE", "LM", "PP")):
+    steady_sim = copy(simulation)
+    fewer_than_one_period = True
+    if change_type == "sine":
+        frequency = change_values[2]
+        if frequency*steady_sim.actual_t_max < 1:  # not even one period resolved
+            pass
+        elif 1/(steady_sim.dt*frequency) < 3:
+            raise ValueError(f"Sine waves must be resolved with at least 3 points but the current dt={steady_sim.dt} "
+                             f"only resolves {np.round(1/(steady_sim.dt*frequency), 3)} points.")
+        elif not (frequency/steady_sim.dt).is_integer():  # this will speed up calculations later
+            fewer_than_one_period = False
+            old_dt = steady_sim.dt
+            old_res_per_period = np.floor(1/(old_dt*frequency))
+            new_res_per_period = old_res_per_period+1
+            new_dt = 1/(new_res_per_period*frequency)
+            steady_sim["dt"] = new_dt
+            steady_sim["t_max"] = 1/frequency
+            simulation["dt"] = new_dt
+            print(f"'dt' has been changed from {old_dt} to {new_dt} to resolve the zero-crossings of the sine.")
+
+    steady_results = get_steady_reference(rotor, flow, airfoil, steady_sim, change_param, change_type, change_values)
+    if change_type == "step":
+        time = simulation.time
+        time_under1s, time_rest = time[time<1], time[time>=1]
+        steady_results = np.hstack([np.full(time_under1s.size, steady_results[0]),
+                                    np.full(time_rest.size, steady_results[1])])
+    elif not fewer_than_one_period:  # change_type == "sine
+        n_full_periods, remaining_time_steps = np.divmod(len(simulation.time), 1/(simulation.dt*change_values[2]))
+        n_full_periods, remaining_time_steps = int(n_full_periods), int(remaining_time_steps)
+        steady_results = np.tile(steady_results, n_full_periods)
+        steady_results = np.hstack([steady_results, steady_results[1:remaining_time_steps]])
+    
+    results = [Results(rotor, simulation)]
+    simulations = [simulation]
+    for model in models:
+        if model != simulation.model:  # skip if input sim does already specify one of the models
+            sim = copy(simulation)
+            sim["model"] = model
+            simulations.append(sim)
+            results.append(Results(rotor, sim))
+            
+    for specific_simulation, result in zip(simulations, results):
+        for t_i, steady_result in enumerate(steady_results):
+            if change_param == "CT_steady":
+                rotor["pitch"] = steady_result
+            else:
+                flow["tsr"] = steady_result
+            tmp_result = BEM(rotor, airfoil, flow, specific_simulation, result)
+            for param, value in tmp_result.items():
+                result[param][t_i] = value
+    return results
+    
+    
 
 
