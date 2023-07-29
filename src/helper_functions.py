@@ -74,8 +74,8 @@ class Helper():
     def handle_axis(self,
                     axis: matplotlib.pyplot.axis or np.ndarray[matplotlib.pyplot.axis],
                     title: str or list[str]=None,
-                    grid: bool or list[bool]=False,
-                    legend: bool=False,
+                    grid: bool or list[bool]=True,
+                    legend: bool=True,
                     legend_loc: int=0,
                     legend_columns: int=1,
                     legend_together: int=False,
@@ -86,8 +86,8 @@ class Helper():
                     y_scale: str="linear",
                     x_lim: tuple=None,
                     y_lim: tuple=None,
-                    font_size: int=False,
-                    line_width: int=None,
+                    font_size: int=20,
+                    line_width: int=3,
                     label_pad: float=5) -> matplotlib.pyplot.axis or np.ndarray[matplotlib.pyplot.axis]:
         """
         This function does a shit ton for convenience (which also means perhaps something against your will). Most
