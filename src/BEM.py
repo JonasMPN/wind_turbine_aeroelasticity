@@ -1,5 +1,5 @@
 import numpy as np
-from scipy import  optimize
+from scipy import optimize
 from data_handler import Rotor, Flow, Simulation, Results
 from copy import copy
 import timeit
@@ -111,20 +111,19 @@ def oye(a, Ct1, Ct2, vint, V0, R, r,dt,glauert=False):
     return a_new, vint2
 
 
-def BEM(rotor: Rotor, airfoil: dict, flow: Flow, simulation: Simulation, results: Results, BEM_max_iterations: int=100):
+def BEM(rotor: Rotor, airfoil: dict, flow: Flow, simulation: Simulation, results: Results, BEM_max_iterations: int=200):
     # Pre-allocate variables
     a_new = np.full(len(rotor['r']), 0.3)
     ap_new = np.zeros(len(rotor['r']))
     a_old = np.zeros(len(rotor['r']))
     ap_old = np.zeros(len(rotor['r']))
-    
     v_int = 0
     BEM_iteration = 0
     while np.sum(np.abs(a_new-a_old)) > simulation['error'] or np.sum(np.abs(ap_new-ap_old)) > simulation['error']:
         BEM_iteration += 1
         if BEM_iteration > BEM_max_iterations:
-            exc = f"BEM did not converge (current error {np.sum(np.abs(a_new-a_old))}) after {BEM_max_iterations} " \
-                  f"iterations.)"
+            exc = f"BEM did not converge (current errors: a {np.sum(np.abs(a_new-a_old))}, ap " \
+                  f"{np.sum(np.abs(ap_new-ap_old))} after {BEM_max_iterations} iterations.)"
             raise Exception(exc)
 
         # Update induction
@@ -248,7 +247,7 @@ def steady_reference(rotor, airfoil, flow, simulation, change: tuple[str, list o
 
 
 def get_steady_reference(rotor: Rotor, flow: Flow, airfoil: dict, simulation: Simulation,
-                         change_param: str, change_type: str, change_values: tuple, min_root_error: float=1e-4):
+                         change_param: str, change_type: str, change_values: tuple, min_root_error: float=1e-3):
     """
     Calculates certain steady values to match the wanted 'change_param' to achieve the 'change_values'.
     
@@ -290,7 +289,6 @@ def get_steady_reference(rotor: Rotor, flow: Flow, airfoil: dict, simulation: Si
         for i, wanted_value in enumerate(wanted_values):
             CT["wanted"] = wanted_value
             steady_results[i] = optimize.newton(residual, steady_results[i-1], tol=min_root_error)
-            
     elif change_param == "U_inf":
         #  changes the TSR to keep the rotational speed the same
         if change_type == "step":
@@ -301,11 +299,11 @@ def get_steady_reference(rotor: Rotor, flow: Flow, airfoil: dict, simulation: Si
         else:
             raise NotImplemented(f"Calculation for 'change_type'=={change_type} not implemented. Implemented are "
                              f"{implemented_change_type}.")
-        steady_results = flow["omega"]*flow["rotor"]["R"]/np.asarray(wanted_values)  # the TSR
+        steady_results = flow["omega"]*rotor.R/np.asarray(wanted_values)  # the TSR
     else:
         raise NotImplemented(f"Calculation for 'change_param'=={change_param} not implemented. Implemented are "
                              f"{implemented_change_param}.")
-    return steady_results
+    return steady_results, wanted_values
 
 
 def calculate_case(rotor: Rotor, flow: Flow, airfoil: dict, simulation: Simulation, change_param: str,
@@ -330,11 +328,12 @@ def calculate_case(rotor: Rotor, flow: Flow, airfoil: dict, simulation: Simulati
             steady_sim["t_max"] = 1/frequency
             simulation["dt"] = new_dt
             print(f"'dt' has been changed from {old_dt} to {new_dt} to resolve the zero-crossings of the sine.")
-    
+            
     if verbose:
         print("Calculating steady reference values")
         start_steady_reference = timeit.default_timer()
-    steady_results = get_steady_reference(rotor, flow, airfoil, steady_sim, change_param, change_type, change_values)
+    steady_results, wanted_values = get_steady_reference(rotor, flow, airfoil, steady_sim, change_param, change_type,
+                                                         change_values)
     if verbose:
         print(f"Finished calculating steady reference values ("
               f"{np.round(timeit.default_timer()-start_steady_reference, 3)}s).")
@@ -344,12 +343,18 @@ def calculate_case(rotor: Rotor, flow: Flow, airfoil: dict, simulation: Simulati
         time_under1s, time_rest = time[time<1], time[time>=1]
         steady_results = np.hstack([np.full(time_under1s.size, steady_results[0]),
                                     np.full(time_rest.size, steady_results[1])])
+        
+        wanted_values = np.hstack([np.full(time_under1s.size, wanted_values[0]),
+                                    np.full(time_rest.size, wanted_values[1])])
     elif not fewer_than_one_period:  # change_type == "sine
         n_full_periods, remaining_time_steps = np.divmod(len(simulation.time), 1/(simulation.dt*change_values[2]))
         n_full_periods, remaining_time_steps = int(n_full_periods), int(remaining_time_steps)
         steady_results = np.tile(steady_results, n_full_periods)
         steady_results = np.hstack([steady_results, steady_results[1:remaining_time_steps]])
-    
+        
+        wanted_values = np.tile(wanted_values, n_full_periods)
+        wanted_values = np.hstack([wanted_values, wanted_values[1:remaining_time_steps]])
+        
     results = [Results(rotor, simulation)]
     simulations = [simulation]
     for model in models:
@@ -363,11 +368,12 @@ def calculate_case(rotor: Rotor, flow: Flow, airfoil: dict, simulation: Simulati
         if verbose:
             print(f"Starting calculations on model: {result.simulation.model}")
             start_model = timeit.default_timer()
-        for t_i, steady_result in enumerate(steady_results):
+        for (t_i, steady_result), wanted_value in zip(enumerate(steady_results), wanted_values):
             if change_param == "CT_steady":
                 rotor["pitch"] = steady_result
             else:
                 flow["tsr"] = steady_result
+                flow["V0"] = wanted_value
             tmp_result = BEM(rotor, airfoil, flow, specific_simulation, result)
             for param, value in tmp_result.items():
                 result[param][t_i] = value
