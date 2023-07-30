@@ -1,10 +1,8 @@
 import numpy as np
-from scipy.interpolate import interp1d
-import pandas as pd
-import matplotlib.pyplot as plt
-from scipy import interpolate, optimize
+from scipy import  optimize
 from data_handler import Rotor, Flow, Simulation, Results
 from copy import copy
+import timeit
 
 
 def CTfunction(a, glauert = False):
@@ -113,7 +111,7 @@ def oye(a, Ct1, Ct2, vint, V0, R, r,dt,glauert=False):
     return a_new, vint2
 
 
-def BEM(rotor: Rotor, airfoil: dict, flow: Flow, simulation: Simulation, results: Results):
+def BEM(rotor: Rotor, airfoil: dict, flow: Flow, simulation: Simulation, results: Results, BEM_max_iterations: int=100):
     # Pre-allocate variables
     a_new = np.full(len(rotor['r']), 0.3)
     ap_new = np.zeros(len(rotor['r']))
@@ -121,12 +119,13 @@ def BEM(rotor: Rotor, airfoil: dict, flow: Flow, simulation: Simulation, results
     ap_old = np.zeros(len(rotor['r']))
     
     v_int = 0
-    iteration = 0
+    BEM_iteration = 0
     while np.sum(np.abs(a_new-a_old)) > simulation['error'] or np.sum(np.abs(ap_new-ap_old)) > simulation['error']:
-        iteration += 1
-        if iteration > 100:
-            print("Current iteration: ", simulation['current_index'])
-            raise Exception("Too many iterations")
+        BEM_iteration += 1
+        if BEM_iteration > BEM_max_iterations:
+            exc = f"BEM did not converge (current error {np.sum(np.abs(a_new-a_old))}) after {BEM_max_iterations} " \
+                  f"iterations.)"
+            raise Exception(exc)
 
         # Update induction
         a_old = a_new
@@ -155,7 +154,7 @@ def BEM(rotor: Rotor, airfoil: dict, flow: Flow, simulation: Simulation, results
 
         # Local thrust and torque coefficient
         Ct = Vrel**2/flow['V0']**2*rotor['sigma']*cn
-        CQ = Vrel**2/flow['V0']**2*rotor['sigma']*ct
+        Cq = Vrel**2/flow['V0']**2*rotor['sigma']*ct
         
         if (simulation['current_index'] == 0) or (simulation['model'] == 'Steady'):
             a_n = ainduction(Ct, glauert=True)
@@ -197,7 +196,7 @@ def BEM(rotor: Rotor, airfoil: dict, flow: Flow, simulation: Simulation, results
         f = f_tip*f_root
         f[f < 0.1] = 0.1
         a_n = a_n/f
-        a_n[a_n > 0.95] = 0.95
+        # a_n[a_n > 0.95] = 0.95
         ap_n = ct*rotor['B']/(2*flow['rho']*2*np.pi*rotor['mu']*rotor['r']*flow['V0']**2*(1-a_n)*flow['tsr'] *
                               rotor['mu']*f)
         
@@ -215,7 +214,7 @@ def BEM(rotor: Rotor, airfoil: dict, flow: Flow, simulation: Simulation, results
     T = rotor['B']*np.trapz(pn, rotor['r'])
     CT = T/(1/2*flow['rho']*flow['V0']**2*np.pi*rotor['R']**2)
     simulation['current_index'] += 1
-    return {"P": P, "T": T, "CP": CP, "CT": CT, "a": a_new, "ap": ap_new, "f": f, "Ct": Ct, "v_int": v_int,
+    return {"P": P, "T": T, "CP": CP, "CT": CT, "a": a_new, "ap": ap_new, "f": f, "Ct": Ct, "Cq": Cq, "v_int": v_int,
             "alpha": Alfa, "phi": Phi}
 
 
@@ -311,6 +310,7 @@ def get_steady_reference(rotor: Rotor, flow: Flow, airfoil: dict, simulation: Si
 
 def calculate_case(rotor: Rotor, flow: Flow, airfoil: dict, simulation: Simulation, change_param: str,
                    change_type: str, change_values: tuple, models: tuple = ("OYE", "LM", "PP")):
+    verbose = simulation.verbose
     steady_sim = copy(simulation)
     fewer_than_one_period = True
     if change_type == "sine":
@@ -330,8 +330,15 @@ def calculate_case(rotor: Rotor, flow: Flow, airfoil: dict, simulation: Simulati
             steady_sim["t_max"] = 1/frequency
             simulation["dt"] = new_dt
             print(f"'dt' has been changed from {old_dt} to {new_dt} to resolve the zero-crossings of the sine.")
-
+    
+    if verbose:
+        print("Calculating steady reference values")
+        start_steady_reference = timeit.default_timer()
     steady_results = get_steady_reference(rotor, flow, airfoil, steady_sim, change_param, change_type, change_values)
+    if verbose:
+        print(f"Finished calculating steady reference values ("
+              f"{np.round(timeit.default_timer()-start_steady_reference, 3)}s).")
+        
     if change_type == "step":
         time = simulation.time
         time_under1s, time_rest = time[time<1], time[time>=1]
@@ -353,6 +360,9 @@ def calculate_case(rotor: Rotor, flow: Flow, airfoil: dict, simulation: Simulati
             results.append(Results(rotor, sim))
             
     for specific_simulation, result in zip(simulations, results):
+        if verbose:
+            print(f"Starting calculations on model: {result.simulation.model}")
+            start_model = timeit.default_timer()
         for t_i, steady_result in enumerate(steady_results):
             if change_param == "CT_steady":
                 rotor["pitch"] = steady_result
@@ -361,6 +371,9 @@ def calculate_case(rotor: Rotor, flow: Flow, airfoil: dict, simulation: Simulati
             tmp_result = BEM(rotor, airfoil, flow, specific_simulation, result)
             for param, value in tmp_result.items():
                 result[param][t_i] = value
+        if verbose:
+            print(f"Finished calculations on model: {result.simulation.model} ("
+                  f"{np.round(timeit.default_timer()-start_model, 3)}s).")
     return results
     
     
