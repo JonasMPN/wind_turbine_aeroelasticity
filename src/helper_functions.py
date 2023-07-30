@@ -55,12 +55,12 @@ class Helper():
     def handle_figure(figure: matplotlib.pyplot.figure,
                       save_to: str=False,
                       show: bool=False,
-                      size: tuple=(18.5, 10),
-                      inches: int=100,
+                      size: tuple=(13, 10),
+                      dpi: int=200,
                       tight_layout: bool=True,
                       close: bool=True) -> matplotlib.pyplot.figure:
         figure.set_size_inches(size)
-        figure.set_dpi(inches)
+        figure.set_dpi(dpi)
         figure.set_tight_layout(tight_layout)
         if save_to:
             figure.savefig(save_to)
@@ -79,6 +79,8 @@ class Helper():
                     legend_loc: int=0,
                     legend_columns: int=1,
                     legend_together: int=False,
+                    legend_column_spacing: float=0.2,
+                    legend_handle_text_pad: float=0.4,
                     x_label: str or list[str]=None,
                     y_label: str or list[str]=None,
                     z_label: str=None,
@@ -170,9 +172,11 @@ class Helper():
                     labels = [line.get_label() for line in lines if line.get_label()[0] != "_"]
                     if legend:
                         if font_size:
-                            ax.legend(lines, labels, ncol=legend_columns, prop={"size": font_size}, loc=legend_loc)
+                            ax.legend(lines, labels, ncol=legend_columns, prop={"size": font_size}, loc=legend_loc,
+                                      columnspacing=legend_column_spacing, handletextpad=legend_handle_text_pad)
                         else:
-                            ax.legend(lines, labels, ncol=legend_columns, loc=legend_loc)
+                            ax.legend(lines, labels, ncol=legend_columns, loc=legend_loc,
+                                      columnspacing=legend_column_spacing, handletextpad=legend_handle_text_pad)
         return axis if shape is None else np.asarray(axis).reshape(shape)
 
     @staticmethod
