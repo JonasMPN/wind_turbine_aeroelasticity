@@ -86,7 +86,7 @@ class Helper():
                     y_scale: str="linear",
                     x_lim: tuple=None,
                     y_lim: tuple=None,
-                    font_size: int=20,
+                    font_size: int=25,
                     line_width: int=3,
                     label_pad: float=5) -> matplotlib.pyplot.axis or np.ndarray[matplotlib.pyplot.axis]:
         """
