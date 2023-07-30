@@ -3,6 +3,20 @@ from data_handler import Rotor, Flow, Simulation, Results, plot_case_results
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import pickle
+import os
+
+
+def load_or_calculate_and_save(file_path, rotor, flow, airfoil, simulation, change_param, change_type, change_values):
+    if os.path.exists(file_path):
+        with open(file_path, 'rb') as file:
+            results = pickle.load(file)
+    else:
+        results = calculate_case(rotor, flow, airfoil, simulation, change_param, change_type, change_values)
+        with open(file_path, 'wb') as file:
+            pickle.dump(results, file)
+
+    return results
 
 # change rotor parameters here
 rotor = Rotor()
@@ -15,9 +29,9 @@ airfoil = {'DU 95-W-180': pd.read_excel("../data/input/DU95W180.xlsx", skiprows=
 # turn off the print statements of the 'calculate_case' by setting Simulation(verbose=False).
 
 calc_and_plot = {
-		"case_A_1": False,
-		"case_A_2": False,
-		"case_B_1": False,
+		"case_A_1": True,
+		"case_A_2": True,
+		"case_B_1": True,
 		"case_B_2": True
 }
 
@@ -27,7 +41,8 @@ if calc_and_plot["case_A_1"]:
 	change_param = "CT_steady"
 	change_type = "step"
 	change_values = (0.5, 0.9)
-	results = calculate_case(rotor, flow, airfoil, simulation, change_param, change_type, change_values)
+	file_path = "../data/results/pickles/case_A_1.pkl"
+	results = load_or_calculate_and_save(file_path, rotor, flow, airfoil, simulation, change_param, change_type, change_values)
 	plot_case_results(results, "../data/results", change_param, change_type, change_values)
 	
 
@@ -39,7 +54,8 @@ if calc_and_plot["case_A_2"]:
 	change_param = "CT_steady"
 	change_type = "sine"
 	change_values = (0.5, 0.5, frequency)
-	results = calculate_case(rotor, flow, airfoil, simulation, change_param, change_type, change_values)
+	file_path = "../data/results/pickles/case_A_2.pkl"
+	results = load_or_calculate_and_save(file_path, rotor, flow, airfoil, simulation, change_param, change_type, change_values)
 	plot_case_results(results, "../data/results", change_param, change_type, change_values)
 
 if calc_and_plot["case_B_1"]:
@@ -48,7 +64,8 @@ if calc_and_plot["case_B_1"]:
 	change_param = "U_inf"
 	change_type = "step"
 	change_values = (10, 15)
-	results = calculate_case(rotor, flow, airfoil, simulation, change_param, change_type, change_values)
+	file_path = "../data/results/pickles/case_B_1.pkl"
+	results = load_or_calculate_and_save(file_path, rotor, flow, airfoil, simulation, change_param, change_type, change_values)
 	plot_case_results(results, "../data/results", change_param, change_type, change_values)
 
 if calc_and_plot["case_B_2"]:
@@ -61,6 +78,10 @@ if calc_and_plot["case_B_2"]:
 	omega = 0.3/(2*np.pi*rotor.R)*sine_mean
 	change_values = (sine_mean, sine_amplitude, omega)
 	simulation = Simulation(model="Steady", t_max=n_periods/omega, dt=0.1)
-	results = calculate_case(rotor, flow, airfoil, simulation, change_param, change_type, change_values)
+	file_path = "../data/results/pickles/case_B_2.pkl"
+	results = load_or_calculate_and_save(file_path, rotor, flow, airfoil, simulation, change_param, change_type, change_values)
 	plot_case_results(results, "../data/results", change_param, change_type, change_values)
+
+
+
 

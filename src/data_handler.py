@@ -185,6 +185,7 @@ def plot_case_results(results: list[Results], save_dir: str, change_param: str, 
 	fig_ap, ax_ap = plt.subplots()
 	fig_alpha, ax_alpha = plt.subplots()
 	fig_phi, ax_phi = plt.subplots()
+
 	
 	n_elements = results[0].rotor.n_r
 	i_middle_element = int(np.floor(n_elements/2))
@@ -214,7 +215,7 @@ def plot_case_results(results: list[Results], save_dir: str, change_param: str, 
 			ax_alpha.plot(result.simulation.time, result.alpha[:, i_element], label=label, linestyle=line_style, color=colour)
 			ax_phi.plot(result.simulation.time, np.rad2deg(result.phi[:, i_element]), label=label, linestyle=line_style,
 			            color=colour)
-			
+
 	axes = [ax_Ct, ax_Cq, ax_a, ax_ap, ax_alpha, ax_phi]
 		
 	for ax in axes:
@@ -247,7 +248,7 @@ def plot_case_results(results: list[Results], save_dir: str, change_param: str, 
 					idx_steady_line += 1
 					
 	figs = [fig_Ct, fig_Cq, fig_a, fig_ap, fig_alpha, fig_phi]
-	params = ["Ct", "Cq", "a", "ap", "alpha", "phi"]
+	params = ["Ct", "Cq", "a", "ap", "alpha", "phi", "a"]
 	x_label = "time (s)"
 	y_labels = ["local thrust coefficient (-)",
 	           "local torque coefficient (-)",
@@ -258,11 +259,19 @@ def plot_case_results(results: list[Results], save_dir: str, change_param: str, 
 	legend_n_cols = 2 if mu_annotation == "colour" else 1
 	for param, fig, ax, y_label in zip(params, figs, axes, y_labels):
 		file = save_to + f"/{param}"
-		helper.handle_axis(ax, x_label=x_label, y_label=y_label, legend_columns=legend_n_cols)
-		helper.handle_figure(fig, save_to=file)
+		helper.handle_axis(ax, x_label=x_label, y_label=y_label, legend_columns=legend_n_cols, font_size= 15, line_width = 2)
+		helper.handle_figure(fig, save_to=file, show=False)
 	
-	
-	
-	
+	file = save_to + "/CT_a"
+	fig_CT_a, ax_CT_a = plt.subplots()
+	line_styles = {"Steady": "solid", "PP": "dotted", "LM": "dashed", "OYE":"dashdot"}
+	colours = {"Steady": "black", "PP": "royalblue","LM": "forestgreen", "OYE": "gold"}
+	for i, result in enumerate(results):
+		model = result.simulation.model
+		 # make baguette plot
+		ax_CT_a.plot(result.CT[len(result.CT)//2:], np.mean(result.a[len(result.a)//2:], axis = 1), label=model, linestyle=line_styles[model],
+		            color=colours[model])
+	helper.handle_axis(ax_CT_a, x_label="CT (-)", y_label="a (-)", font_size= 15, line_width = 2)
+	helper.handle_figure(fig_CT_a, save_to=file, show=False)
 	
 	
