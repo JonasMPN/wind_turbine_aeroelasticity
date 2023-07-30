@@ -174,7 +174,8 @@ class Results:
 		return iter(tuple([param for param in self.__dict__.keys() if param not in self.skip]))
 	
 
-def plot_case_results(results: list[Results], save_dir: str, change_param: str, change_type: str, change_values: tuple):
+def plot_case_results(results: list[Results], save_dir: str, change_param: str, change_type: str,
+                      change_values: tuple, mu_annotation: str = "colour"):
 	save_to = save_dir+"/"+change_param+"_"+change_type+"_"+str(change_values)
 	helper.create_dir(save_to)
 	
@@ -188,44 +189,63 @@ def plot_case_results(results: list[Results], save_dir: str, change_param: str, 
 	n_elements = results[0].rotor.n_r
 	i_middle_element = int(np.floor(n_elements/2))
 	i_elements = np.array([0, i_middle_element, n_elements-1])
-	
-	line_styles = {"Steady": "solid", "PP": "dotted", "LM": "dashed", "OYE": "dashdot"}
-	colours = {"Steady": "black", "PP": "royalblue", "LM": "forestgreen", "OYE": "gold"}
 	R = results[0].rotor.R
 	mu_clarifier = np.round(results[0].rotor.r[i_elements]/R, 2)
+	n_mu = len(mu_clarifier)
+	
+	if mu_annotation == "colour":
+		colour_per_mu = ["royalblue", "forestgreen", "gold"]  # means that currently max 3 mus are supported
+		colours = {model: colour_per_mu for model in ["Steady", "PP", "LM", "OYE"]}
+		line_styles = {"Steady": n_mu*["solid"], "PP": n_mu*["dotted"], "LM": n_mu*["dashed"], "OYE": n_mu*["dashdot"]}
+	else:  # mu_annotation == "text"
+		line_styles = {"Steady": n_mu*["solid"], "PP": n_mu*["dotted"], "LM": n_mu*["dashed"], "OYE": n_mu*["dashdot"]}
+		colours = {"Steady": n_mu*["black"], "PP": n_mu*["royalblue"], "LM": n_mu*["forestgreen"], "OYE": n_mu*["gold"]}
 	
 	for result in results:
 		model = result.simulation.model
-		line_style = line_styles[model]
-		colour = colours[model]
 		for i, i_element in enumerate(i_elements):
-			label = model if i == 0 else None
+			line_style = line_styles[model][i]
+			colour = colours[model][i]
+			label = model if i == 0 and mu_annotation == "text" else None
 			ax_Ct.plot(result.simulation.time, result.Ct[:, i_element], label=label, linestyle=line_style, color=colour)
 			ax_Cq.plot(result.simulation.time, result.Cq[:, i_element], label=label, linestyle=line_style, color=colour)
 			ax_a.plot(result.simulation.time, result.a[:, i_element], label=label, linestyle=line_style, color=colour)
 			ax_ap.plot(result.simulation.time, result.ap[:, i_element], label=label, linestyle=line_style, color=colour)
 			ax_alpha.plot(result.simulation.time, result.alpha[:, i_element], label=label, linestyle=line_style, color=colour)
-			ax_phi.plot(result.simulation.time, result.phi[:, i_element], label=label, linestyle=line_style, color=colour)
-	
+			ax_phi.plot(result.simulation.time, np.rad2deg(result.phi[:, i_element]), label=label, linestyle=line_style,
+			            color=colour)
+			
 	axes = [ax_Ct, ax_Cq, ax_a, ax_ap, ax_alpha, ax_phi]
-	for ax in axes:
-		y_range = ax.get_ylim()[1]-ax.get_ylim()[0]
-		ax.set_ylim(ax.get_ylim()[0], ax.get_ylim()[1]*1.1)
-		x_range = ax.get_xlim()[1]-ax.get_xlim()[0]
 		
-		idx_steady_line = 0
-		for line in ax.get_lines():
-			if line.get_linestyle() == "-":
-				if change_type == "step":
-					x_text = ax.get_xlim()[1]-0.1*x_range
-					y_text = line.get_ydata()[-1]+0.04*y_range
-				else:  # change_type == "sine"
-					idx_y_max = np.argmax(line.get_ydata())
-					x_text = line.get_xdata()[idx_y_max]-0.03*x_range
-					y_text = line.get_ydata()[idx_y_max]+0.03*y_range
-				ax.text(x_text, y_text, r"$\mu$="+str(mu_clarifier[idx_steady_line]), fontsize=22)
-				idx_steady_line += 1
-				
+	for ax in axes:
+		if mu_annotation == "colour":
+			x_lim, y_lim = ax.get_xlim(), ax.get_ylim()
+			x_tmp, y_tmp = x_lim[0]-10, y_lim[0]-10
+			for model, line_style in line_styles.items():
+				ax.plot(x_tmp, y_tmp, "k", linestyle=line_style[0], label=model)
+			for i_mu, colour in enumerate(colour_per_mu):
+				ax.plot(x_tmp, y_tmp, "o", color=colour, label=rf"$\mu$={mu_clarifier[i_mu]}")
+			ax.set_xlim(*x_lim)
+			ax.set_ylim(*y_lim)
+			
+		else:  # mu_annotation == "text"
+			y_range = ax.get_ylim()[1]-ax.get_ylim()[0]
+			ax.set_ylim(ax.get_ylim()[0], ax.get_ylim()[1]*1.1)
+			x_range = ax.get_xlim()[1]-ax.get_xlim()[0]
+			
+			idx_steady_line = 0
+			for line in ax.get_lines():
+				if line.get_linestyle() == "-":
+					if change_type == "step":
+						x_text = ax.get_xlim()[1]-0.1*x_range
+						y_text = line.get_ydata()[-1]+0.04*y_range
+					else:  # change_type == "sine"
+						idx_y_max = np.argmax(line.get_ydata())
+						x_text = line.get_xdata()[idx_y_max]-0.03*x_range
+						y_text = line.get_ydata()[idx_y_max]+0.03*y_range
+					ax.text(x_text, y_text, r"$\mu$="+str(mu_clarifier[idx_steady_line]), fontsize=22)
+					idx_steady_line += 1
+					
 	figs = [fig_Ct, fig_Cq, fig_a, fig_ap, fig_alpha, fig_phi]
 	params = ["Ct", "Cq", "a", "ap", "alpha", "phi"]
 	x_label = "time (s)"
@@ -235,10 +255,10 @@ def plot_case_results(results: list[Results], save_dir: str, change_param: str, 
 	           "local tangential induction (-)",
 	           "local angle of attack (°)",
 	           "local inflow angle (°)"]
-	
+	legend_n_cols = 2 if mu_annotation == "colour" else 1
 	for param, fig, ax, y_label in zip(params, figs, axes, y_labels):
 		file = save_to + f"/{param}"
-		helper.handle_axis(ax, x_label=x_label, y_label=y_label)
+		helper.handle_axis(ax, x_label=x_label, y_label=y_label, legend_columns=legend_n_cols)
 		helper.handle_figure(fig, save_to=file)
 	
 	
