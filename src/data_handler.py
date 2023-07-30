@@ -99,6 +99,7 @@ class Simulation:
 	dt: float = 0.1
 	current_index: int = 0
 	t_max: float = 30
+	verbose: bool = True
 	
 	time: np.ndarray = field(init=False)
 	actual_t_max: np.float = field(init=False)
@@ -174,7 +175,9 @@ class Results:
 	
 
 def plot_case_results(results: list[Results], save_dir: str, change_param: str, change_type: str, change_values: tuple):
-	helper.create_dir(save_dir)
+	save_to = save_dir+"/"+change_param+"_"+change_type+"_"+str(change_values)
+	helper.create_dir(save_to)
+	
 	fig_Ct, ax_Ct = plt.subplots()
 	fig_Cq, ax_Cq = plt.subplots()
 	fig_a, ax_a = plt.subplots()
@@ -183,22 +186,48 @@ def plot_case_results(results: list[Results], save_dir: str, change_param: str, 
 	fig_phi, ax_phi = plt.subplots()
 	
 	n_elements = results[0].rotor.n_r
-	i_middle_element = np.floor(n_elements/2)
-	i_elements = np.array([0, i_middle_element, n_elements])
+	i_middle_element = int(np.floor(n_elements/2))
+	i_elements = np.array([0, i_middle_element, n_elements-1])
+	
+	line_styles = {"Steady": "solid", "PP": "dotted", "LM": "dashed", "OYE": "dashdot"}
+	colours = {"Steady": "black", "PP": "royalblue", "LM": "forestgreen", "OYE": "gold"}
+	R = results[0].rotor.R
+	mu_clarifier = np.round(results[0].rotor.r[i_elements]/R, 2)
 	
 	for result in results:
-		for i_element in i_elements:
-			ax_Ct.plot(result.simulation.time, result.Ct[:, i_element], label=result.simulation.model)
-			ax_Cq.plot(result.simulation.time, result.Cq[:, i_element], label=result.simulation.model)
-			ax_a.plot(result.simulation.time, result.a[:, i_element], label=result.simulation.model)
-			ax_ap.plot(result.simulation.time, result.ap[:, i_element], label=result.simulation.model)
-			ax_alpha.plot(result.simulation.time, result.alpha[:, i_element], label=result.simulation.model)
-			ax_phi.plot(result.simulation.time, result.phi[:, i_element], label=result.simulation.model)
-			
+		model = result.simulation.model
+		line_style = line_styles[model]
+		colour = colours[model]
+		for i, i_element in enumerate(i_elements):
+			label = model if i == 0 else None
+			ax_Ct.plot(result.simulation.time, result.Ct[:, i_element], label=label, linestyle=line_style, color=colour)
+			ax_Cq.plot(result.simulation.time, result.Cq[:, i_element], label=label, linestyle=line_style, color=colour)
+			ax_a.plot(result.simulation.time, result.a[:, i_element], label=label, linestyle=line_style, color=colour)
+			ax_ap.plot(result.simulation.time, result.ap[:, i_element], label=label, linestyle=line_style, color=colour)
+			ax_alpha.plot(result.simulation.time, result.alpha[:, i_element], label=label, linestyle=line_style, color=colour)
+			ax_phi.plot(result.simulation.time, result.phi[:, i_element], label=label, linestyle=line_style, color=colour)
+	
 	axes = [ax_Ct, ax_Cq, ax_a, ax_ap, ax_alpha, ax_phi]
+	for ax in axes:
+		y_range = ax.get_ylim()[1]-ax.get_ylim()[0]
+		ax.set_ylim(ax.get_ylim()[0], ax.get_ylim()[1]*1.1)
+		x_range = ax.get_xlim()[1]-ax.get_xlim()[0]
+		
+		idx_steady_line = 0
+		for line in ax.get_lines():
+			if line.get_linestyle() == "-":
+				if change_type == "step":
+					x_text = ax.get_xlim()[1]-0.1*x_range
+					y_text = line.get_ydata()[-1]+0.04*y_range
+				else:  # change_type == "sine"
+					idx_y_max = np.argmax(line.get_ydata())
+					x_text = line.get_xdata()[idx_y_max]-0.03*x_range
+					y_text = line.get_ydata()[idx_y_max]+0.03*y_range
+				ax.text(x_text, y_text, r"$\mu$="+str(mu_clarifier[idx_steady_line]), fontsize=22)
+				idx_steady_line += 1
+				
 	figs = [fig_Ct, fig_Cq, fig_a, fig_ap, fig_alpha, fig_phi]
 	params = ["Ct", "Cq", "a", "ap", "alpha", "phi"]
-	file_name_base = change_param+"_"+change_type+"_"+str(change_values)+".png"
 	x_label = "time (s)"
 	y_labels = ["local thrust coefficient (-)",
 	           "local torque coefficient (-)",
@@ -208,7 +237,7 @@ def plot_case_results(results: list[Results], save_dir: str, change_param: str, 
 	           "local inflow angle (°)"]
 	
 	for param, fig, ax, y_label in zip(params, figs, axes, y_labels):
-		file = save_dir + f"/{param}_{file_name_base}"
+		file = save_to + f"/{param}"
 		helper.handle_axis(ax, x_label=x_label, y_label=y_label)
 		helper.handle_figure(fig, save_to=file)
 	
